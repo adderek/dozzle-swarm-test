@@ -8,7 +8,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      DOZZLE_REMOTE_AGENT: "dozzle-agent:7007"
+      DOZZLE_MODE: swarm
+      DOZZLE_REMOTE_AGENT: "dozzle-agent-1:7007,dozzle-agent-2:7007,dozzle-agent-3:7007"
     deploy:
       placement:
         constraints:

@@ -20,15 +20,18 @@ run_command() {
   echo "Command on $host: $*"
   
   # Set DOCKER_HOST based on the container
-  if [ "$host" != "localhost" ]; then
-    export DOCKER_HOST="tcp://$host:2375"
+  if [ "$host" = "manager" ]; then
+    # For the manager, use the local socket
+    if ! docker -H unix:///var/run/docker.sock "$@"; then
+      echo "ERROR: Command failed with status $?"
+      return 1
+    fi
   else
-    unset DOCKER_HOST
-  fi
-  
-  if ! docker "$@"; then
-    echo "ERROR: Command failed with status $?"
-    return 1
+    # For workers, use TCP
+    if ! DOCKER_HOST="tcp://$host:2375" docker "$@"; then
+      echo "ERROR: Command failed with status $?"
+      return 1
+    fi
   fi
   
   echo "=== End of $description ==="
@@ -43,98 +46,152 @@ wait_for_service() {
   local max_attempts=30
   local attempt=0
   
-  # Set DOCKER_HOST based on the container
-  if [ "$host" != "localhost" ]; then
-    export DOCKER_HOST="tcp://$host:2375"
-  else
-    unset DOCKER_HOST
-  fi
-  
   echo "Waiting for $service on $host to be ready..."
-  until docker info >/dev/null 2>&1; do
-    attempt=$((attempt + 1))
-    if [ $attempt -ge $max_attempts ]; then
-      echo "$service is not ready after $max_attempts attempts, giving up"
-      return 1
+  
+  while [ $attempt -lt $max_attempts ]; do
+    if [ "$host" = "manager" ]; then
+      # For the manager, use the local socket
+      if docker -H unix:///var/run/docker.sock info >/dev/null 2>&1; then
+        echo "$service is ready!"
+        return 0
+      fi
+    else
+      # For workers, use TCP
+      if DOCKER_HOST="tcp://$host:2375" docker info >/dev/null 2>&1; then
+        echo "$service is ready!"
+        return 0
+      fi
     fi
+    
+    attempt=$((attempt + 1))
     echo "$service not ready yet, waiting... (attempt $attempt/$max_attempts)"
     sleep 2
   done
-  echo "$service is ready!"
-  return 0
+  
+  echo "$service is not ready after $max_attempts attempts, giving up"
+  return 1
 }
 
 # Main execution
-echo "=== Starting Swarm Setup ==="
+main() {
+  # Wait for manager Docker daemon to be ready
+  wait_for_service "Manager Docker daemon" "manager"
+  
+  # Initialize swarm on manager if not already initialized
+  if ! docker -H unix:///var/run/docker.sock node ls &> /dev/null; then
+    echo "Initializing new swarm on manager"
+    
+    # Get the manager container's IP address
+    MANAGER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $MANAGER_CONTAINER)
+    
+    if [ -z "$MANAGER_IP" ]; then
+      echo "ERROR: Could not get manager IP address"
+      exit 1
+    fi
+    
+    echo "Initializing swarm with manager IP: $MANAGER_IP"
+    
+    # Initialize the swarm with the manager's IP
+    if ! docker -H unix:///var/run/docker.sock swarm init --advertise-addr $MANAGER_IP:2377; then
+      echo "ERROR: Failed to initialize swarm on manager"
+      exit 1
+    fi
+    
+    echo "Swarm initialized successfully on manager ($MANAGER_IP)"
+  else
+    echo "Manager is already part of a swarm"
+    
+    # Get manager IP for joining workers
+    MANAGER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $MANAGER_CONTAINER)
+    if [ -z "$MANAGER_IP" ]; then
+      echo "ERROR: Could not get manager IP address"
+      exit 1
+    fi
+  fi
+  
+  echo "Using manager host: $MANAGER_IP"
 
-# Check if manager is already in a swarm
-echo "=== Checking if manager is already in a swarm ==="
-if docker -H tcp://manager:2375 node ls >/dev/null 2>&1; then
-  echo "Manager is already part of a swarm"
-  MANAGER_IP="manager"
-else
-  echo "Initializing new swarm on manager"
-  if ! docker -H tcp://manager:2375 swarm init --advertise-addr manager; then
-    echo "ERROR: Failed to initialize swarm on manager"
+  # Get join token
+  echo ""
+  echo "=== Getting join token from manager ==="
+  JOIN_TOKEN=$(docker -H unix:///var/run/docker.sock swarm join-token -q worker 2>/dev/null)
+  if [ -z "$JOIN_TOKEN" ]; then
+    echo "ERROR: Failed to get join token"
     exit 1
   fi
-  MANAGER_IP="manager"
-fi
+  
+  echo "Join token: $JOIN_TOKEN"
 
-echo "Using manager host: $MANAGER_IP"
-
-
-# Get join token for workers
-echo ""
-echo "=== Getting join token from manager ==="
-JOIN_TOKEN=$(docker -H tcp://manager:2375 swarm join-token -q worker 2>/dev/null | tr -d '[:space:]')
-
-if [ -z "$JOIN_TOKEN" ] || [ ${#JOIN_TOKEN} -lt 30 ]; then
-  echo "ERROR: Failed to get valid join token from manager"
-  docker exec -i "$MANAGER_CONTAINER" docker node ls
-  exit 1
-fi
-
-echo "Join token: $JOIN_TOKEN"
-
-# Add workers to the swarm
-for worker in "$WORKER1_CONTAINER" "$WORKER2_CONTAINER" "$WORKER3_CONTAINER"; do
+  # Join workers to the swarm
+  for worker in $WORKER1_CONTAINER $WORKER2_CONTAINER $WORKER3_CONTAINER; do
+    echo ""
+    echo "=== Processing $worker ==="
+    
+    # Wait for worker Docker daemon to be ready
+    wait_for_service "$worker Docker daemon" "$worker"
+    
+    # Check if worker is already in the swarm
+    if DOCKER_HOST="tcp://$worker:2375" docker info 2>&1 | grep -q "Swarm: active"; then
+      echo "$worker is already part of a swarm, skipping..."
+      continue
+    fi
+    
+    # Join worker to swarm
+    echo "$worker joining swarm..."
+    if ! DOCKER_HOST="tcp://$worker:2375" docker swarm join --token $JOIN_TOKEN $MANAGER_IP:2377; then
+      echo "ERROR: Failed to join $worker to swarm"
+      continue
+    fi
+    
+    echo "Successfully joined $worker to swarm"
+  done
+  
   echo ""
-  echo "=== Processing $worker ==="
-  
-  # Wait for worker Docker daemon to be ready
-  if ! wait_for_service "$worker Docker daemon" "$worker" info; then
-    echo "WARNING: Failed to connect to $worker's Docker daemon, skipping..."
-    continue
-  fi
-  
-  # Check if worker is already in the swarm
-  if docker -H tcp://$worker:2375 info 2>&1 | grep -q "Swarm: active"; then
-    echo "$worker is already part of a swarm, skipping..."
-    continue
-  fi
-  
-  # Join worker to swarm
-  echo "$worker joining swarm at $MANAGER_IP:2377..."
+  echo "=== Swarm setup complete ==="
+  docker -H unix:///var/run/docker.sock node ls
+}
+
+# Start the main function
+echo "=== Starting Swarm Setup ==="
+main "$@"
+
+# Exit with success if we reach this point
+echo "Setup completed successfully"
+exit 0
   MAX_RETRIES=3
   RETRY_COUNT=0
+  JOIN_SUCCESS=0
   
   while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    echo "Attempting to join worker to swarm at $MANAGER_IP:2377..."
-    if docker -H tcp://$worker:2375 swarm join --advertise-addr "$worker" --token "$JOIN_TOKEN" "$MANAGER_IP:2377"; then
-      echo "Successfully joined $worker to the swarm"
+    if docker -H tcp://$WORKER_IP:2375 swarm join --token $JOIN_TOKEN --advertise-addr $WORKER_IP:2377 $MANAGER_IP:2377; then
+      echo "$worker successfully joined the swarm"
+      JOIN_SUCCESS=1
       break
     else
       RETRY_COUNT=$((RETRY_COUNT + 1))
-      if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-        echo "WARNING: Failed to join $worker to the swarm after $MAX_RETRIES attempts"
-      else
+      if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
         echo "Retry $RETRY_COUNT/$MAX_RETRIES: Failed to join $worker to the swarm, retrying in 5 seconds..."
         sleep 5
       fi
     fi
   done
+  
+  if [ $JOIN_SUCCESS -eq 0 ]; then
+    echo "ERROR: Failed to join $worker to swarm after $MAX_RETRIES retries"
+  fi
 done
+
+echo ""
+echo "=== Swarm setup complete ==="
+echo "Manager node: $MANAGER_IP"
+echo "Worker nodes: $WORKER1_CONTAINER, $WORKER2_CONTAINER, $WORKER3_CONTAINER"
+echo ""
+echo "To access the swarm, use:"
+echo "  docker -H tcp://$MANAGER_IP:2375 node ls"
+echo ""
+echo "To deploy the stack, run:"
+echo "  docker -H tcp://$MANAGER_IP:2375 stack deploy -c /swarm/docker-stack.yml dozzle"
+echo ""
 
 # Deploy Dozzle stack on the manager
 echo ""

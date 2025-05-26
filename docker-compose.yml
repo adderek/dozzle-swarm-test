@@ -4,16 +4,15 @@ services:
     privileged: true
     hostname: manager
     ports:
-      - "8080:8080"  # For Dozzle UI
       - "2375"        # Expose Docker daemon on TCP 2375
     volumes:
       - manager-data:/var/lib/docker
       - ./swarm:/swarm
     environment:
       - DOCKER_TLS_CERTDIR=
-      # Enable TCP access to Docker daemon
-      - DOCKER_TLS_CERTDIR=
       - DOCKER_TLS_VERIFY=0
+      - DOCKER_HOST=tcp://0.0.0.0:2375
+      - ADVERTISE_ADDR=eth0
     command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     networks:
       - swarm-network
@@ -28,6 +27,7 @@ services:
       start_period: 30s
       retries: 3
 
+
   worker1:
     image: docker:dind
     privileged: true
@@ -38,9 +38,9 @@ services:
       - worker1-data:/var/lib/docker
     environment:
       - DOCKER_TLS_CERTDIR=
-      # Enable TCP access to Docker daemon
-      - DOCKER_TLS_CERTDIR=
       - DOCKER_TLS_VERIFY=0
+      - DOCKER_HOST=tcp://0.0.0.0:2375
+      - ADVERTISE_ADDR=eth0
     command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     depends_on:
       manager:
@@ -66,9 +66,9 @@ services:
       - worker2-data:/var/lib/docker
     environment:
       - DOCKER_TLS_CERTDIR=
-      # Enable TCP access to Docker daemon
-      - DOCKER_TLS_CERTDIR=
       - DOCKER_TLS_VERIFY=0
+      - DOCKER_HOST=tcp://0.0.0.0:2375
+      - ADVERTISE_ADDR=eth0
     command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     depends_on:
       manager:
@@ -94,9 +94,9 @@ services:
       - worker3-data:/var/lib/docker
     environment:
       - DOCKER_TLS_CERTDIR=
-      # Enable TCP access to Docker daemon
-      - DOCKER_TLS_CERTDIR=
       - DOCKER_TLS_VERIFY=0
+      - DOCKER_HOST=tcp://0.0.0.0:2375
+      - ADVERTISE_ADDR=eth0
     command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     depends_on:
       manager:
@@ -113,28 +113,28 @@ services:
       retries: 3
 
   swarm-setup:
-    image: docker:latest
-    container_name: ${COMPOSE_PROJECT_NAME:-dozzle}-setup
+    image: docker:20.10.24-cli-alpine3.17
+    container_name: ${COMPOSE_PROJECT_NAME}-setup
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./swarm:/swarm
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DOCKER_TLS_VERIFY=
+      - DOCKER_TLS_CERTDIR=
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-dozzle}
     depends_on:
       manager:
         condition: service_healthy
       worker1:
-        condition: service_started
+        condition: service_healthy
       worker2:
-        condition: service_started
+        condition: service_healthy
       worker3:
-        condition: service_started
-    volumes:
-      - ./swarm:/swarm:ro
-    environment:
-      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-dozzle}
-      - DOCKER_TLS_CERTDIR=
-      # Connect to the manager's Docker daemon via TCP
-      - DOCKER_HOST=tcp://manager:2375
-    entrypoint: /bin/sh
-    command: -c "apk add --no-cache jq && sh /swarm/setup.sh"
+        condition: service_healthy
     networks:
       - swarm-network
+    command: sh -c "apk add --no-cache jq && chmod +x /swarm/setup.sh && /swarm/setup.sh"
     deploy:
       mode: replicated
       replicas: 1
@@ -156,3 +156,4 @@ volumes:
   worker1-data:
   worker2-data:
   worker3-data:
+  docker-sockets:
