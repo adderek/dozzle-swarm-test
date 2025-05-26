@@ -1,0 +1,128 @@
+services:
+  manager:
+    image: docker:dind
+    privileged: true
+    ports:
+      - "8080:8080"  # For Dozzle UI
+    volumes:
+      - manager-data:/var/lib/docker
+      - ./swarm:/swarm
+    environment:
+      - DOCKER_TLS_CERTDIR=
+    command: ["--storage-driver=overlay2"]
+    networks:
+      - swarm-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "docker info > /dev/null 2>&1 && (docker node ls > /dev/null 2>&1 || docker swarm init --advertise-addr 127.0.0.1 || true)"]
+      interval: 10s
+      timeout: 20s
+      start_period: 30s
+      retries: 3
+
+  worker1:
+    image: docker:dind
+    privileged: true
+    volumes:
+      - worker1-data:/var/lib/docker
+    environment:
+      - DOCKER_TLS_CERTDIR=
+    command: ["--storage-driver=overlay2"]
+    depends_on:
+      manager:
+        condition: service_healthy
+    networks:
+      - swarm-network
+    deploy:
+      replicas: 1
+    healthcheck:
+      test: ["CMD-SHELL", "docker info > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 20s
+      start_period: 30s
+      retries: 3
+
+  worker2:
+    image: docker:dind
+    privileged: true
+    volumes:
+      - worker2-data:/var/lib/docker
+    environment:
+      - DOCKER_TLS_CERTDIR=
+    command: ["--storage-driver=overlay2"]
+    depends_on:
+      manager:
+        condition: service_healthy
+    networks:
+      - swarm-network
+    deploy:
+      replicas: 1
+    healthcheck:
+      test: ["CMD-SHELL", "docker info > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 20s
+      start_period: 30s
+      retries: 3
+
+  worker3:
+    image: docker:dind
+    privileged: true
+    volumes:
+      - worker3-data:/var/lib/docker
+    environment:
+      - DOCKER_TLS_CERTDIR=
+    command: ["--storage-driver=overlay2"]
+    depends_on:
+      manager:
+        condition: service_healthy
+    networks:
+      - swarm-network
+    deploy:
+      replicas: 1
+    healthcheck:
+      test: ["CMD-SHELL", "docker info > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 20s
+      start_period: 30s
+      retries: 3
+
+  swarm-setup:
+    image: docker:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-dozzle}-setup
+    depends_on:
+      manager:
+        condition: service_healthy
+      worker1:
+        condition: service_started
+      worker2:
+        condition: service_started
+      worker3:
+        condition: service_started
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./swarm:/swarm
+    entrypoint: ["/bin/sh", "/swarm/setup.sh"]
+
+    networks:
+      - swarm-network
+
+networks:
+  swarm-network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.10.0.0/24
+
+volumes:
+  manager-data:
+  worker1-data:
+  worker2-data:
+  worker3-data:

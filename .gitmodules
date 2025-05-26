@@ -1,0 +1,3 @@
+[submodule "dozzle"]
+	path = dozzle
+	url = git@github.com:adderek/dozzle.git
