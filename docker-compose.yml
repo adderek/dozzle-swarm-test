@@ -2,14 +2,19 @@ services:
   manager:
     image: docker:dind
     privileged: true
+    hostname: manager
     ports:
       - "8080:8080"  # For Dozzle UI
+      - "2375"        # Expose Docker daemon on TCP 2375
     volumes:
       - manager-data:/var/lib/docker
       - ./swarm:/swarm
     environment:
       - DOCKER_TLS_CERTDIR=
-    command: ["--storage-driver=overlay2"]
+      # Enable TCP access to Docker daemon
+      - DOCKER_TLS_CERTDIR=
+      - DOCKER_TLS_VERIFY=0
+    command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     networks:
       - swarm-network
     deploy:
@@ -17,20 +22,26 @@ services:
       restart_policy:
         condition: on-failure
     healthcheck:
-      test: ["CMD-SHELL", "docker info > /dev/null 2>&1 && (docker node ls > /dev/null 2>&1 || docker swarm init --advertise-addr 127.0.0.1 || true)"]
+      test: ["CMD", "sh", "-c", "DOCKER_TLS_VERIFY= DOCKER_HOST=tcp://localhost:2375 /usr/local/bin/docker info"]
       interval: 10s
-      timeout: 20s
+      timeout: 5s
       start_period: 30s
       retries: 3
 
   worker1:
     image: docker:dind
     privileged: true
+    hostname: worker1
+    expose:
+      - "2375"  # Expose Docker daemon on TCP 2375
     volumes:
       - worker1-data:/var/lib/docker
     environment:
       - DOCKER_TLS_CERTDIR=
-    command: ["--storage-driver=overlay2"]
+      # Enable TCP access to Docker daemon
+      - DOCKER_TLS_CERTDIR=
+      - DOCKER_TLS_VERIFY=0
+    command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     depends_on:
       manager:
         condition: service_healthy
@@ -39,20 +50,26 @@ services:
     deploy:
       replicas: 1
     healthcheck:
-      test: ["CMD-SHELL", "docker info > /dev/null 2>&1"]
+      test: ["CMD", "sh", "-c", "DOCKER_TLS_VERIFY= DOCKER_HOST=tcp://localhost:2375 /usr/local/bin/docker info"]
       interval: 10s
-      timeout: 20s
+      timeout: 5s
       start_period: 30s
       retries: 3
 
   worker2:
     image: docker:dind
     privileged: true
+    hostname: worker2
+    expose:
+      - "2375"  # Expose Docker daemon on TCP 2375
     volumes:
       - worker2-data:/var/lib/docker
     environment:
       - DOCKER_TLS_CERTDIR=
-    command: ["--storage-driver=overlay2"]
+      # Enable TCP access to Docker daemon
+      - DOCKER_TLS_CERTDIR=
+      - DOCKER_TLS_VERIFY=0
+    command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     depends_on:
       manager:
         condition: service_healthy
@@ -61,20 +78,26 @@ services:
     deploy:
       replicas: 1
     healthcheck:
-      test: ["CMD-SHELL", "docker info > /dev/null 2>&1"]
+      test: ["CMD", "sh", "-c", "DOCKER_TLS_VERIFY= DOCKER_HOST=tcp://localhost:2375 /usr/local/bin/docker info"]
       interval: 10s
-      timeout: 20s
+      timeout: 5s
       start_period: 30s
       retries: 3
 
   worker3:
     image: docker:dind
     privileged: true
+    hostname: worker3
+    expose:
+      - "2375"  # Expose Docker daemon on TCP 2375
     volumes:
       - worker3-data:/var/lib/docker
     environment:
       - DOCKER_TLS_CERTDIR=
-    command: ["--storage-driver=overlay2"]
+      # Enable TCP access to Docker daemon
+      - DOCKER_TLS_CERTDIR=
+      - DOCKER_TLS_VERIFY=0
+    command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     depends_on:
       manager:
         condition: service_healthy
@@ -83,9 +106,9 @@ services:
     deploy:
       replicas: 1
     healthcheck:
-      test: ["CMD-SHELL", "docker info > /dev/null 2>&1"]
+      test: ["CMD", "sh", "-c", "DOCKER_TLS_VERIFY= DOCKER_HOST=tcp://localhost:2375 /usr/local/bin/docker info"]
       interval: 10s
-      timeout: 20s
+      timeout: 5s
       start_period: 30s
       retries: 3
 
@@ -101,15 +124,22 @@ services:
         condition: service_started
       worker3:
         condition: service_started
-    environment:
-      - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./swarm:/swarm
-    entrypoint: ["/bin/sh", "/swarm/setup.sh"]
-
+      - ./swarm:/swarm:ro
+    environment:
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-dozzle}
+      - DOCKER_TLS_CERTDIR=
+      # Connect to the manager's Docker daemon via TCP
+      - DOCKER_HOST=tcp://manager:2375
+    entrypoint: /bin/sh
+    command: -c "apk add --no-cache jq && sh /swarm/setup.sh"
     networks:
       - swarm-network
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
 
 networks:
   swarm-network:
