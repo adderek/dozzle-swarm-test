@@ -13,6 +13,14 @@
 `docker compose exec manager docker stack rm dozzle` to remove dozzle
 `docker compose exec manager docker stack ps dozzle` to see dozzle stack status
 
+### For full system cleanup:
+`docker compose down --remove-orphans`
+`docker rm -f $(docker ps -aq)`
+`docker volume rm $(docker volume ls -q)`
+`docker network rm $(docker network ls -q --filter name=swarm)`
+`docker system prune -af --volumes`
+
+
 # Introduction
 
 ## Docker compose

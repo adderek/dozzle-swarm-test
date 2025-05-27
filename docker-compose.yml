@@ -95,7 +95,7 @@ services:
       - worker3-data:/var/lib/docker
     environment:
       - DOCKER_TLS_CERTDIR=
-      - DOCKER_TLS_VERIFY=0
+      - DOCKER_TLS_VERIFY=
       - DOCKER_HOST=tcp://0.0.0.0:2375
       - ADVERTISE_ADDR=eth0
     command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
