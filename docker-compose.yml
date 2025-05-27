@@ -5,15 +5,16 @@ services:
     hostname: manager
     ports:
       - "8080:8080"
-      - "2375"        # Expose Docker daemon on TCP 2375
     volumes:
       - manager-data:/var/lib/docker
       - ./swarm:/swarm
+    working_dir: /swarm
     environment:
-      - DOCKER_TLS_CERTDIR=
-      - DOCKER_TLS_VERIFY=0
-      - DOCKER_HOST=tcp://0.0.0.0:2375
       - ADVERTISE_ADDR=eth0
+      - DOCKER_HOST=tcp://0.0.0.0:2375
+      - DOCKER_TLS_CERTDIR=
+      - DOCKER_TLS_VERIFY=
+      - PS1=SWARM-MANAGER \\w \\$
     command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     networks:
       - swarm-network
@@ -33,15 +34,14 @@ services:
     image: docker:dind
     privileged: true
     hostname: worker1
-    expose:
-      - "2375"  # Expose Docker daemon on TCP 2375
     volumes:
       - worker1-data:/var/lib/docker
     environment:
       - DOCKER_TLS_CERTDIR=
-      - DOCKER_TLS_VERIFY=0
+      - DOCKER_TLS_VERIFY=
       - DOCKER_HOST=tcp://0.0.0.0:2375
       - ADVERTISE_ADDR=eth0
+      - PS1=SWARM-worker-1 \\w \\$
     command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     depends_on:
       manager:
@@ -61,15 +61,14 @@ services:
     image: docker:dind
     privileged: true
     hostname: worker2
-    expose:
-      - "2375"  # Expose Docker daemon on TCP 2375
     volumes:
       - worker2-data:/var/lib/docker
     environment:
       - DOCKER_TLS_CERTDIR=
-      - DOCKER_TLS_VERIFY=0
+      - DOCKER_TLS_VERIFY=
       - DOCKER_HOST=tcp://0.0.0.0:2375
       - ADVERTISE_ADDR=eth0
+      - PS1=SWARM-worker-2 \\w \\$
     command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     depends_on:
       manager:
@@ -89,8 +88,6 @@ services:
     image: docker:dind
     privileged: true
     hostname: worker3
-    expose:
-      - "2375"  # Expose Docker daemon on TCP 2375
     volumes:
       - worker3-data:/var/lib/docker
     environment:
@@ -98,6 +95,7 @@ services:
       - DOCKER_TLS_VERIFY=
       - DOCKER_HOST=tcp://0.0.0.0:2375
       - ADVERTISE_ADDR=eth0
+      - PS1=SWARM-worker-3 \\w \\$
     command: ["--storage-driver=overlay2", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
     depends_on:
       manager:
@@ -115,7 +113,7 @@ services:
 
   swarm-setup:
     image: docker:20.10.24-cli-alpine3.17
-    container_name: ${COMPOSE_PROJECT_NAME}-setup
+    container_name: swarm-setup
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./swarm:/swarm
@@ -141,7 +139,6 @@ services:
       replicas: 1
       restart_policy:
         condition: on-failure
-
 networks:
   swarm-network:
     driver: bridge

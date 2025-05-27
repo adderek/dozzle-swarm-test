@@ -1,4 +1,8 @@
 #!/bin/sh
+# Waits for DIND containers to be ready
+# Then joins them to the swarm
+# Then runs dozzle setup
+
 set -e
 
 # Project name from environment or default to 'dozzle'
@@ -136,9 +140,33 @@ main() {
 echo "=== Starting Swarm Setup ==="
 main "$@"
 
-# Keep the container running
-tail -f /dev/null
-
 # Exit with success if we reach this point
-echo "Setup completed successfully"
+echo "Swarm setup completed successfully"
+
+echo "Building example swarm-app..."
+docker compose exec --workdir /swarm/app manager \
+  ls -l
+docker compose exec --workdir /swarm/app manager \
+  docker build -t swarm-app .
+docker compose exec manager \
+  docker tag swarm-app 127.0.0.1:5000/swarm-app
+
+echo "Deploying swarm..."
+docker compose exec manager \
+  docker stack deploy -c /swarm/docker-stack.yml dozzle
+
+until run_docker "$MANAGER_HOST" stack ls | grep dozzle; do
+  echo "Waiting for swarm to be deployed..."
+  sleep 5
+done 
+
+echo "Pushing swarm-app:latest to local-docker-registry..."
+docker compose exec manager \
+  docker push 127.0.0.1:5000/swarm-app
+
+echo "Scaling swarm-app to 2 replicas..."
+# This should download the image
+docker compose exec manager \
+  docker service scale dozzle_app=2
+
 exit 0

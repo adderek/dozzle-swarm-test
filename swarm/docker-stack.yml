@@ -1,6 +1,42 @@
 version: '3.8'
 
 services:
+  app:
+    image: 127.0.0.1:5000/swarm-app
+    environment:
+      - PORT=81
+    hostname: app
+    deploy:
+      placement:
+        constraints:
+          - node.role == worker
+      replicas: 0
+      restart_policy:
+        condition: on-failure
+  haproxy:
+    image: haproxy:2.7
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+  swarm-docker-registry:
+    image: registry:2
+    ports:
+      - "5000:5000"
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+
   dozzle-master:
     image: amir20/dozzle:latest
     ports:
@@ -8,16 +44,26 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
+      DOZZLE_BASE: /dozzle
+      DOZZLE_ENABLE_ACTIONS: "true"
+      DOZZLE_ENABLE_SHELL: "true"
+      #DOZZLE_FILTER: "name=dozzle"
+      DOZZLE_HOSTNAME: dozzle-master
       DOZZLE_MODE: swarm
-      DOZZLE_REMOTE_AGENT: "dozzle-agent-1:7007,dozzle-agent-2:7007,dozzle-agent-3:7007"
+      DOZZLE_NAMESPACE: ""
+      DOZZLE_NO_ANALYTICS: "true"
+      DOZZLE_REMOTE_AGENT: "haproxy:8081/dozzle-agent-1/,haproxy:8081/dozzle-agent-2/,haproxy:8081/dozzle-agent-3/,haproxy:8082,haproxy:8083,haproxy:8084,tasks.dozzle-agent:7007"  # Let's try everything we have
+      #DOZZLE_REMOTE_AGENT: "tasks.dozzle-agent:7007"  # HAProxy gets the IP of the dozzle-agent containers (every of them) but dozzle gets only 1
+      #DOZZLE_REMOTE_AGENT: "dozzle-agent-1:7007,dozzle-agent-2:7007,dozzle-agent-3:7007"  # containers are named "dozzle-agent-<UUID>" and we cannot know their names or IP's
+      #DOZZLE_REMOTE_AGENT: "dozzle-agent:7007"  # docker swarm resolves this to one random
+      #DOZZLE_LEVEL: "debug"
+      #DOZZLE_AUTH_PROVIDER: "simple"
+      DOZZLE_TIMEOUT: "10s"
     deploy:
       placement:
         constraints:
           - node.role == manager
       replicas: 1
-      update_config:
-        parallelism: 1
-        delay: 10s
       restart_policy:
         condition: on-failure
 
@@ -26,13 +72,12 @@ services:
     command: agent
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      DOZZLE_HOSTNAME: dozzle-agent
     deploy:
       mode: global
       placement:
         constraints:
           - node.role == worker
-      update_config:
-        parallelism: 1
-        delay: 30s
       restart_policy:
         condition: on-failure
