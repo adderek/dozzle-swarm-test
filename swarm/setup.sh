@@ -76,7 +76,12 @@ wait_for_service() {
 main() {
   # Wait for manager Docker daemon to be ready
   wait_for_service "Manager Docker daemon" "manager"
-  
+
+  # List docker compose DIND containers
+  docker -H unix:///var/run/docker.sock ps -a
+
+  # FIXME: initialize swarm on the nodes, not on host
+
   # Initialize swarm on manager if not already initialized
   if ! docker -H unix:///var/run/docker.sock node ls &> /dev/null; then
     echo "Initializing new swarm on manager"
@@ -158,64 +163,3 @@ main "$@"
 # Exit with success if we reach this point
 echo "Setup completed successfully"
 exit 0
-  MAX_RETRIES=3
-  RETRY_COUNT=0
-  JOIN_SUCCESS=0
-  
-  while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker -H tcp://$WORKER_IP:2375 swarm join --token $JOIN_TOKEN --advertise-addr $WORKER_IP:2377 $MANAGER_IP:2377; then
-      echo "$worker successfully joined the swarm"
-      JOIN_SUCCESS=1
-      break
-    else
-      RETRY_COUNT=$((RETRY_COUNT + 1))
-      if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-        echo "Retry $RETRY_COUNT/$MAX_RETRIES: Failed to join $worker to the swarm, retrying in 5 seconds..."
-        sleep 5
-      fi
-    fi
-  done
-  
-  if [ $JOIN_SUCCESS -eq 0 ]; then
-    echo "ERROR: Failed to join $worker to swarm after $MAX_RETRIES retries"
-  fi
-done
-
-echo ""
-echo "=== Swarm setup complete ==="
-echo "Manager node: $MANAGER_IP"
-echo "Worker nodes: $WORKER1_CONTAINER, $WORKER2_CONTAINER, $WORKER3_CONTAINER"
-echo ""
-echo "To access the swarm, use:"
-echo "  docker -H tcp://$MANAGER_IP:2375 node ls"
-echo ""
-echo "To deploy the stack, run:"
-echo "  docker -H tcp://$MANAGER_IP:2375 stack deploy -c /swarm/docker-stack.yml dozzle"
-echo ""
-
-# Deploy Dozzle stack on the manager
-echo ""
-echo "=== Deploying Dozzle Stack ==="
-if [ -f "/swarm/docker-stack.yml" ]; then
-  echo "Found Dozzle stack configuration, deploying..."
-  if DOCKER_HOST=tcp://manager:2375 docker stack deploy -c /swarm/docker-stack.yml dozzle; then
-    echo "Dozzle stack deployed successfully!"
-  else
-    echo "WARNING: Failed to deploy Dozzle stack"
-  fi
-else
-  echo "WARNING: Dozzle stack configuration not found at /swarm/docker-stack.yml"
-fi
-
-echo ""
-echo "=== Swarm Setup Complete ==="
-docker node ls
-
-# If we have a manager IP, show the Dozzle URL
-if [ -n "$MANAGER_IP" ]; then
-  echo "Access Dozzle at: http://$MANAGER_IP:8080"
-fi
-
-echo ""
-echo "=== Setup Complete ==="
-docker node ls 2>/dev/null || echo "Not in swarm mode or not a manager node"

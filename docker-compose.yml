@@ -4,6 +4,7 @@ services:
     privileged: true
     hostname: manager
     ports:
+      - "8080:8080"
       - "2375"        # Expose Docker daemon on TCP 2375
     volumes:
       - manager-data:/var/lib/docker
