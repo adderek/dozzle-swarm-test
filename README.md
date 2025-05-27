@@ -1,5 +1,14 @@
 # TL;DR
 
+- `git clone https://github.com/adderek/dozzle-swarm-test.git` to clone repo
+- `git submodule init ; git submodule update` to update submodules
+- `cd dozzle-swarm-test` to enter repo directory
+- `docker compose up -d` to start docker swarm
+- open http://localhost:8080/dozzle/ to see dozzle manager
+- `docker compose down --remove-orphans` to stop docker swarm
+
+# Commands help
+
 ## We are using docker compose (v2, that is docker-compose-plugin) to start docker swarm nodes with docker-in-docker (dind)
 
 - `docker compose up -d` to start docker swarm
