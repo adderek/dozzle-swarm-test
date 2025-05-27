@@ -2,24 +2,24 @@
 
 ## We are using docker compose (v2, that is docker-compose-plugin) to start docker swarm nodes with docker-in-docker (dind)
 
-`docker compose up -d` to start docker swarm
-`docker compose down --remove-orphans` to stop docker swarm
-`docker compose logs` to see logs
-`docker compose ps` to see status
-`docker compose exec manager docker node ls` to see nodes
-`docker compose exec manager docker stack ls` to see stacks
-`docker compose exec manager docker service ls` to see services
-`docker compose exec manager docker stack deploy -c swarm/docker-stack.yml dozzle` to deploy dozzle
-`docker compose exec manager docker stack rm dozzle` to remove dozzle
-`docker compose exec manager docker stack ps dozzle` to see dozzle stack status
+- `docker compose up -d` to start docker swarm
+- `docker compose down --remove-orphans` to stop docker swarm
+- `docker compose logs` to see logs
+- `docker compose ps` to see status
+- `docker compose exec manager docker node ls` to see nodes
+- `docker compose exec manager docker stack ls` to see stacks
+- `docker compose exec manager docker service ls` to see services
+- `docker compose exec manager docker stack deploy -c swarm/docker-stack.yml dozzle` to deploy dozzle
+- `docker compose exec manager docker stack rm dozzle` to remove dozzle
+- `docker compose exec manager docker stack ps dozzle` to see dozzle stack status
 
 ### For full system cleanup:
-`docker compose down --remove-orphans`
-`docker rm -f $(docker ps -aq)`
-`docker volume rm $(docker volume ls -q)`
-`docker network rm $(docker network ls -q --filter name=swarm)`
-`docker system prune -af --volumes`
 
+- `docker compose down --remove-orphans`
+- `docker rm -f $(docker ps -aq)`
+- `docker volume rm $(docker volume ls -q)`
+- `docker network rm $(docker network ls -q --filter name=swarm)`
+- `docker system prune -af --volumes`
 
 # Introduction
 
@@ -60,4 +60,3 @@ This repository was created to change, build and test dozzle in docker swarm set
   - dozzle agents (inside every worker node)
 - http://localhost:8080 opens web interface of dozzle manager which can present logs from all containers in docker swarm
 - dozzle agents collect logs from all containers in their node and send them to dozzle manager
-- 
